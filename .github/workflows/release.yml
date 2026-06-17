@@ -103,16 +103,18 @@ jobs:
 
           ## ${{ inputs.chapter }}
 
-          ### Install via AltStore
+          ### Install via Sideloadly
 
-          AltStore signs the app with your own Apple ID (development certificate),
+          Sideloadly signs the app with your own Apple ID (development certificate),
           which automatically grants the `get-task-allow` entitlement.
           This entitlement is required for LLDB to attach to the process.
 
-          1. Install [AltStore](https://altstore.io) on your Mac and iPhone/iPad
-          2. Download `InstrumentationJourney.ipa` from this release
-          3. In AltStore on your device: tap **+** and select the IPA
-          4. Enable **Developer Mode** on the device (Settings > Privacy & Security > Developer Mode)
+          1. Install [Sideloadly](https://sideloadly.io) on your Mac or Windows PC
+          2. Connect your iPhone/iPad via USB
+          3. Download `InstrumentationJourney.ipa` from this release
+          4. Drag the IPA into Sideloadly, enter your Apple ID and click Start
+          5. Enable **Developer Mode** on the device (Settings > Privacy & Security > Developer Mode)
+          6. Trust the app certificate (Settings > General > VPN & Device Management)
 
           ### Attach LLDB
 
