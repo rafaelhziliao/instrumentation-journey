@@ -1,6 +1,6 @@
-name: Build & Release IPA
+name: Build & Release
 
-# Manual trigger only — you decide when to ship.
+# Manual trigger — run when you want to cut a new release.
 on:
   workflow_dispatch:
     inputs:
@@ -9,7 +9,7 @@ on:
         required: true
         type: string
       chapter:
-        description: "Chapter label for release title (e.g. Chapter 1: The Observer)"
+        description: "Chapter label (e.g. Chapter 1: The Observer)"
         required: true
         type: string
         default: "Chapter 1: The Observer"
@@ -33,140 +33,71 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Ruby / xcpretty ────────────────────────────────────────────────
-      - name: Setup Ruby and xcpretty
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: "3.3"
-          bundler-cache: true
-
-      # ── 3. Xcode ───────────────────────────────────────────────────────────
+      # ── 2. Xcode ───────────────────────────────────────────────────────────
       - name: Select Xcode
         run: |
-          # List available Xcode versions for debugging
-          ls /Applications/Xcode*.app 2>/dev/null || true
           sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
           xcodebuild -version
 
-      # ── 4. Signing — temporary keychain ───────────────────────────────────
-      - name: Install signing certificate
-        env:
-          CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
-          CERTIFICATE_PASSWORD: ${{ secrets.CERTIFICATE_PASSWORD }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+      # ── 3. xcpretty ───────────────────────────────────────────────────────
+      - name: Install xcpretty
+        run: gem install xcpretty --no-document
+
+      # ── 4. Build (unsigned) ────────────────────────────────────────────────
+      # Builds without code signing to verify the project compiles cleanly.
+      # Participants install by cloning and building in their own Xcode,
+      # which signs automatically with their development certificate —
+      # this is required for get-task-allow:true to work with LLDB anyway.
+      - name: Build
         run: |
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-
-          # Create a temporary keychain
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Decode and import the .p12 certificate
-          echo "$CERTIFICATE_BASE64" | base64 --decode -o "$RUNNER_TEMP/certificate.p12"
-          security import "$RUNNER_TEMP/certificate.p12" \
-            -P "$CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-
-          # Make the keychain searchable
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-
-      - name: Install provisioning profile
-        env:
-          PROVISIONING_PROFILE_BASE64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
-        run: |
-          PP_PATH="$RUNNER_TEMP/profile.mobileprovision"
-          echo "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o "$PP_PATH"
-
-          # Get the UUID embedded in the profile to name it correctly
-          UUID=$(security cms -D -i "$PP_PATH" | \
-            plutil -extract UUID raw -)
-
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp "$PP_PATH" \
-            ~/Library/MobileDevice/Provisioning\ Profiles/"$UUID".mobileprovision
-
-          echo "Installed profile UUID: $UUID"
-
-      # ── 5. Build ───────────────────────────────────────────────────────────
-      - name: Archive
-        run: |
-          xcodebuild archive \
+          xcodebuild build \
             -project InstrumentationJourney.xcodeproj \
             -scheme InstrumentationJourney \
             -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath "$RUNNER_TEMP/InstrumentationJourney.xcarchive" \
-            DEVELOPMENT_TEAM="${{ secrets.TEAM_ID }}" \
-            CODE_SIGN_STYLE=Manual \
-            | xcpretty || true
+            CODE_SIGNING_ALLOWED=NO \
+            | xcpretty
 
-      # ── 5. Export IPA ──────────────────────────────────────────────────────
-      - name: Export IPA
-        run: |
-          # Inject the team ID into the ExportOptions before exporting
-          sed "s/TEAM_ID_PLACEHOLDER/${{ secrets.TEAM_ID }}/g" \
-            ExportOptions.plist > "$RUNNER_TEMP/ExportOptions.plist"
-
-          xcodebuild -exportArchive \
-            -archivePath "$RUNNER_TEMP/InstrumentationJourney.xcarchive" \
-            -exportPath "$RUNNER_TEMP/export" \
-            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            | xcpretty || true
-
-          # Verify the IPA was created
-          ls -lh "$RUNNER_TEMP/export/"
-
-      # ── 6. Upload dSYM as artifact (for crash symbolication) ──────────────
-      - name: Upload dSYM
-        uses: actions/upload-artifact@v4
-        with:
-          name: dSYM-v${{ inputs.version }}
-          path: ${{ runner.temp }}/InstrumentationJourney.xcarchive/dSYMs/
-          retention-days: 90
-
-      # ── 7. GitHub Release ──────────────────────────────────────────────────
+      # ── 5. Tag and release ─────────────────────────────────────────────────
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          NOTES="${{ inputs.release_notes }}"
+          PRERELEASE_FLAG=""
+          if [ "${{ inputs.prerelease }}" = "true" ]; then
+            PRERELEASE_FLAG="--prerelease"
+          fi
 
-          # Append the standard LLDB attach guide to every release
+          NOTES="${{ inputs.release_notes }}"
           NOTES="$NOTES
 
 ## ${{ inputs.chapter }}
 
-### Install
-Download \`InstrumentationJourney.ipa\` and install via [AltStore](https://altstore.io) or Apple Configurator.
+### How to install
+
+Clone the repo and open in Xcode. Change the signing team to your own Apple Developer account and run on your device.
+
+\`\`\`bash
+git clone https://github.com/${{ github.repository }}
+cd InstrumentationJourney
+open InstrumentationJourney.xcodeproj
+\`\`\`
+
+> Xcode is required because \`get-task-allow: true\` (needed for LLDB attach) is only preserved when signed with a development certificate — which Xcode applies automatically when you run on device.
 
 ### Requirements
 - iOS 16+ device with **Developer Mode** enabled
-  (Settings → Privacy & Security → Developer Mode)
-- Mac with Xcode installed (for LLDB)
+- Mac with Xcode
 
 ### Attach LLDB
 \`\`\`bash
 xcrun lldb
 (lldb) device select \"your device name\"
 (lldb) device process attach -n InstrumentationJourney
-\`\`\`
-"
-
-          PRERELEASE_FLAG=""
-          if [ "${{ inputs.prerelease }}" = "true" ]; then
-            PRERELEASE_FLAG="--prerelease"
-          fi
+\`\`\`"
 
           gh release create "v${{ inputs.version }}" \
-            "$RUNNER_TEMP/export/InstrumentationJourney.ipa" \
             --title "v${{ inputs.version }} — ${{ inputs.chapter }}" \
             --notes "$NOTES" \
+            --target "${{ github.sha }}" \
             $PRERELEASE_FLAG
-
-      # ── 8. Cleanup keychain ────────────────────────────────────────────────
-      - name: Clean up keychain
-        if: always()
-        run: |
-          security delete-keychain "$RUNNER_TEMP/app-signing.keychain-db" 2>/dev/null || true
