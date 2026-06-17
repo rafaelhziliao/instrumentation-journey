@@ -13,13 +13,14 @@ on:
         required: true
         type: choice
         options:
-          - "Chapter 1: The Observer"
-          - "Chapter 2: Runtime Explorer"
-          - "Chapter 3: Import Rewriter"
-          - "Chapter 4: Inline Hooker"
-          - "Chapter 5: Swift Hunter"
-          - "Chapter 6: Dynamic Explorer"
-          - "Chapter 7: Flutter Archaeologist"
+          - "Chapter 01: The Observer"
+          - "Chapter 02: The Messenger"
+          - "Chapter 03: The Interceptor"
+          - "Chapter 04: The Linker"
+          - "Chapter 05: The Import Rewriter"
+          - "Chapter 06: The Inline Hook"
+          - "Chapter 07: The Toolkit"
+          - "Chapter 08: The Real Target"
       release_notes:
         description: "Release notes (markdown, optional)"
         required: false
