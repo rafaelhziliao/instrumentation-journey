@@ -31,7 +31,7 @@ struct Chapter01ChallengeView: View {
             .padding(.vertical, 16)
         }
         .background(AppColors.background.ignoresSafeArea())
-        .navigationTitle("Chapter 1 — The Observer")
+        .navigationTitle("Chapter 1: The Observer")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(AppColors.surface, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
@@ -165,6 +165,7 @@ struct Chapter01ChallengeView: View {
                 .font(.mono(12))
                 .foregroundStyle(AppColors.textMuted)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(16)
         .background(AppColors.surfaceElevated)
         .overlay(
