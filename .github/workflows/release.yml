@@ -9,10 +9,17 @@ on:
         required: true
         type: string
       chapter:
-        description: "Chapter label (e.g. Chapter 1: The Observer)"
+        description: "Chapter being released"
         required: true
-        type: string
-        default: "Chapter 1: The Observer"
+        type: choice
+        options:
+          - "Chapter 1: The Observer"
+          - "Chapter 2: Runtime Explorer"
+          - "Chapter 3: Import Rewriter"
+          - "Chapter 4: Inline Hooker"
+          - "Chapter 5: Swift Hunter"
+          - "Chapter 6: Dynamic Explorer"
+          - "Chapter 7: Flutter Archaeologist"
       release_notes:
         description: "Release notes (markdown, optional)"
         required: false
