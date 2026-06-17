@@ -93,6 +93,8 @@ jobs:
           echo "IPA size: $(du -sh "$RUNNER_TEMP/InstrumentationJourney.ipa" | cut -f1)"
 
       # ── 8. GitHub Release ──────────────────────────────────────────────────
+      # Deletes any existing release and tag with the same version before
+      # creating a fresh one. Safe to re-run for the same version.
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -100,6 +102,13 @@ jobs:
           PRERELEASE_FLAG=""
           if [ "${{ inputs.prerelease }}" = "true" ]; then
             PRERELEASE_FLAG="--prerelease"
+          fi
+
+          TAG="v${{ inputs.version }}"
+
+          # Delete existing release + tag if they exist (idempotent re-run).
+          if gh release view "$TAG" &>/dev/null; then
+            gh release delete "$TAG" --yes --cleanup-tag
           fi
 
           NOTES="${{ inputs.release_notes }}"
@@ -122,18 +131,19 @@ jobs:
 ### Attach LLDB
 
 \`\`\`bash
-xcrun lldb
+lldb
+(lldb) device list
 (lldb) device select \"your device name\"
-(lldb) device process attach -n InstrumentationJourney
+(lldb) device process attach -n InstrumentationJourney --waitfor
 \`\`\`
 
 ### Requirements
 - iOS 16+ device
 - Mac with Xcode installed (LLDB is part of Xcode)"
 
-          gh release create "v${{ inputs.version }}" \
+          gh release create "$TAG" \
             "$RUNNER_TEMP/InstrumentationJourney.ipa" \
-            --title "v${{ inputs.version }} — ${{ inputs.chapter }}" \
+            --title "$TAG: ${{ inputs.chapter }}" \
             --notes "$NOTES" \
             --target "${{ github.sha }}" \
             $PRERELEASE_FLAG
