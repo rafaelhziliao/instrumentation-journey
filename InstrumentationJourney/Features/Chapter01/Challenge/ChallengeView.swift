@@ -70,6 +70,7 @@ struct Chapter01ChallengeView: View {
                 "Attach a debugger. Inspect the running process. " +
                 "Retrieve what it holds."
             )
+            .frame(maxWidth: .infinity, alignment: .leading)
             .font(.prose(14))
             .foregroundStyle(AppColors.textSecondary)
             .lineSpacing(3)
@@ -152,13 +153,16 @@ struct Chapter01ChallengeView: View {
     private var hintBlock: some View {
         VStack(alignment: .leading, spacing: 10) {
             TerminalLabel(text: "// APPROACH")
-            Text("$ xcrun lldb")
+            Text("$ lldb")
+                .font(.mono(12))
+                .foregroundStyle(AppColors.accent)
+            Text("$ device list")
                 .font(.mono(12))
                 .foregroundStyle(AppColors.accent)
             Text("(lldb) device select \"iPhone\"")
                 .font(.mono(12))
                 .foregroundStyle(AppColors.accent)
-            Text("(lldb) device process attach -n InstrumentationJourney")
+            Text("(lldb) device process attach -n InstrumentationJourney --waitfor")
                 .font(.mono(12))
                 .foregroundStyle(AppColors.accent)
             Text("> Inspect the heap. The answer is already there.")
