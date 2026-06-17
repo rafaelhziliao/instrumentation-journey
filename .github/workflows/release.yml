@@ -114,7 +114,7 @@ jobs:
           3. Download `InstrumentationJourney.ipa` from this release
           4. Drag the IPA into Sideloadly, enter your Apple ID and click Start
           5. Enable **Developer Mode** on the device (Settings > Privacy & Security > Developer Mode)
-          6. Trust the app certificate (Settings > General > VPN & Device Management)
+          6. Open the app. If prompted with "Untrusted Developer", go to Settings > General > VPN & Device Management, tap your Apple ID and tap **Trust**
 
           ### Attach LLDB
 
