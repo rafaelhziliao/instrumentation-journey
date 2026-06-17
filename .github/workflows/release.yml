@@ -1,4 +1,4 @@
-name: Build & Release
+name: Build & Release IPA
 
 # Manual trigger — run when you want to cut a new release.
 on:
@@ -14,7 +14,7 @@ on:
         type: string
         default: "Chapter 1: The Observer"
       release_notes:
-        description: "Release notes (markdown)"
+        description: "Release notes (markdown, optional)"
         required: false
         type: string
         default: ""
@@ -36,29 +36,48 @@ jobs:
       # ── 2. Xcode ───────────────────────────────────────────────────────────
       - name: Select Xcode
         run: |
-          sudo xcode-select -s "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
+          sudo xcode-select -s \
+            "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
           xcodebuild -version
 
-      # ── 3. xcpretty ───────────────────────────────────────────────────────
+      # ── 3. xcpretty ────────────────────────────────────────────────────────
       - name: Install xcpretty
         run: gem install xcpretty --no-document
 
-      # ── 4. Build (unsigned) ────────────────────────────────────────────────
-      # Builds without code signing to verify the project compiles cleanly.
-      # Participants install by cloning and building in their own Xcode,
-      # which signs automatically with their development certificate —
-      # this is required for get-task-allow:true to work with LLDB anyway.
-      - name: Build
+      # ── 4. Archive (unsigned) ──────────────────────────────────────────────
+      # Builds a Release archive without code signing.
+      # AltStore re-signs with the reader's own Apple ID (development cert),
+      # which automatically includes get-task-allow:true — required for LLDB.
+      - name: Archive
         run: |
-          xcodebuild build \
+          xcodebuild archive \
             -project InstrumentationJourney.xcodeproj \
             -scheme InstrumentationJourney \
             -configuration Release \
             -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/InstrumentationJourney.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
             | xcpretty
 
-      # ── 5. Tag and release ─────────────────────────────────────────────────
+      # ── 5. Package IPA ─────────────────────────────────────────────────────
+      # Wraps the .app bundle in the standard IPA structure (Payload/App.app).
+      # No signature — AltStore expects this format and handles signing itself.
+      - name: Package IPA
+        run: |
+          APP=$(find "$RUNNER_TEMP/InstrumentationJourney.xcarchive" \
+            -name "*.app" -maxdepth 4 | head -1)
+
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -r "$APP" "$RUNNER_TEMP/ipa/Payload/"
+
+          cd "$RUNNER_TEMP/ipa"
+          zip -r "$RUNNER_TEMP/InstrumentationJourney.ipa" Payload/
+
+          echo "IPA size: $(du -sh "$RUNNER_TEMP/InstrumentationJourney.ipa" | cut -f1)"
+
+      # ── 6. GitHub Release ──────────────────────────────────────────────────
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -69,34 +88,36 @@ jobs:
           fi
 
           NOTES="${{ inputs.release_notes }}"
-          NOTES="$NOTES
+          NOTES="${NOTES}
 
 ## ${{ inputs.chapter }}
 
-### How to install
+### Install via AltStore
 
-Clone the repo and open in Xcode. Change the signing team to your own Apple Developer account and run on your device.
+> AltStore signs the app with your own Apple ID (development certificate),
+> which automatically grants the \`get-task-allow\` entitlement.
+> **This entitlement is required for LLDB to attach to the process.**
 
-\`\`\`bash
-git clone https://github.com/${{ github.repository }}
-cd InstrumentationJourney
-open InstrumentationJourney.xcodeproj
-\`\`\`
-
-> Xcode is required because \`get-task-allow: true\` (needed for LLDB attach) is only preserved when signed with a development certificate — which Xcode applies automatically when you run on device.
-
-### Requirements
-- iOS 16+ device with **Developer Mode** enabled
-- Mac with Xcode
+1. Install [AltStore](https://altstore.io) on your Mac and iPhone/iPad
+2. Download \`InstrumentationJourney.ipa\` from this release
+3. In AltStore on your device: tap **+** and select the IPA
+4. Enable **Developer Mode** on the device
+   (Settings → Privacy & Security → Developer Mode)
 
 ### Attach LLDB
+
 \`\`\`bash
 xcrun lldb
 (lldb) device select \"your device name\"
 (lldb) device process attach -n InstrumentationJourney
-\`\`\`"
+\`\`\`
+
+### Requirements
+- iOS 16+ device
+- Mac with Xcode installed (LLDB is part of Xcode)"
 
           gh release create "v${{ inputs.version }}" \
+            "$RUNNER_TEMP/InstrumentationJourney.ipa" \
             --title "v${{ inputs.version }} — ${{ inputs.chapter }}" \
             --notes "$NOTES" \
             --target "${{ github.sha }}" \
