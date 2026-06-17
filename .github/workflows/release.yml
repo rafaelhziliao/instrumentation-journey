@@ -59,7 +59,7 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
-      # ── 6. Archive (unsigned) ──────────────────────────────────────────────
+      # ── 5. Archive (unsigned) ──────────────────────────────────────────────
       # Builds a Release archive without code signing.
       # AltStore re-signs with the reader's own Apple ID (development cert),
       # which automatically includes get-task-allow:true — required for LLDB.
@@ -76,7 +76,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             | xcpretty
 
-      # ── 7. Package IPA ─────────────────────────────────────────────────────
+      # ── 6. Package IPA ─────────────────────────────────────────────────────
       # Wraps the .app bundle in the standard IPA structure (Payload/App.app).
       # No signature — AltStore expects this format and handles signing itself.
       - name: Package IPA
@@ -91,6 +91,40 @@ jobs:
           zip -r "$RUNNER_TEMP/InstrumentationJourney.ipa" Payload/
 
           echo "IPA size: $(du -sh "$RUNNER_TEMP/InstrumentationJourney.ipa" | cut -f1)"
+
+      # ── 7. Build release notes ─────────────────────────────────────────────
+      # Written to a file to avoid YAML/bash quoting issues with multiline text.
+      - name: Build release notes
+        run: |
+          cat > "$RUNNER_TEMP/notes.md" << 'EOF'
+          ${{ inputs.release_notes }}
+
+          ## ${{ inputs.chapter }}
+
+          ### Install via AltStore
+
+          AltStore signs the app with your own Apple ID (development certificate),
+          which automatically grants the `get-task-allow` entitlement.
+          This entitlement is required for LLDB to attach to the process.
+
+          1. Install [AltStore](https://altstore.io) on your Mac and iPhone/iPad
+          2. Download `InstrumentationJourney.ipa` from this release
+          3. In AltStore on your device: tap **+** and select the IPA
+          4. Enable **Developer Mode** on the device (Settings > Privacy & Security > Developer Mode)
+
+          ### Attach LLDB
+
+          ```bash
+          lldb
+          (lldb) device list
+          (lldb) device select "your device name"
+          (lldb) device process attach -n InstrumentationJourney --waitfor
+          ```
+
+          ### Requirements
+          - iOS 16+ device
+          - Mac with Xcode installed (LLDB is bundled with Xcode)
+          EOF
 
       # ── 8. GitHub Release ──────────────────────────────────────────────────
       # Deletes any existing release and tag with the same version before
@@ -107,43 +141,13 @@ jobs:
           TAG="v${{ inputs.version }}"
 
           # Delete existing release + tag if they exist (idempotent re-run).
-          if gh release view "$TAG" &>/dev/null; then
+          if gh release view "$TAG" > /dev/null 2>&1; then
             gh release delete "$TAG" --yes --cleanup-tag
           fi
-
-          NOTES="${{ inputs.release_notes }}"
-          NOTES="${NOTES}
-
-## ${{ inputs.chapter }}
-
-### Install via AltStore
-
-> AltStore signs the app with your own Apple ID (development certificate),
-> which automatically grants the \`get-task-allow\` entitlement.
-> **This entitlement is required for LLDB to attach to the process.**
-
-1. Install [AltStore](https://altstore.io) on your Mac and iPhone/iPad
-2. Download \`InstrumentationJourney.ipa\` from this release
-3. In AltStore on your device: tap **+** and select the IPA
-4. Enable **Developer Mode** on the device
-   (Settings → Privacy & Security → Developer Mode)
-
-### Attach LLDB
-
-\`\`\`bash
-lldb
-(lldb) device list
-(lldb) device select \"your device name\"
-(lldb) device process attach -n InstrumentationJourney --waitfor
-\`\`\`
-
-### Requirements
-- iOS 16+ device
-- Mac with Xcode installed (LLDB is part of Xcode)"
 
           gh release create "$TAG" \
             "$RUNNER_TEMP/InstrumentationJourney.ipa" \
             --title "$TAG: ${{ inputs.chapter }}" \
-            --notes "$NOTES" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
             --target "${{ github.sha }}" \
             $PRERELEASE_FLAG
