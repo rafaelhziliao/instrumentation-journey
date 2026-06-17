@@ -19,6 +19,7 @@ struct HomeView: View {
                     chaptersSection
                     footer
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
             }

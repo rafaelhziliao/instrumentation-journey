@@ -48,11 +48,18 @@ jobs:
             "$(ls -d /Applications/Xcode*.app | sort -V | tail -1)/Contents/Developer"
           xcodebuild -version
 
-      # ── 3. xcpretty ────────────────────────────────────────────────────────
-      - name: Install xcpretty
-        run: gem install xcpretty --no-document
+      # ── 3. Tools ───────────────────────────────────────────────────────────
+      - name: Install build tools
+        run: |
+          gem install xcpretty --no-document
+          brew install xcodegen
 
-      # ── 4. Archive (unsigned) ──────────────────────────────────────────────
+      # ── 4. Generate Xcode project ──────────────────────────────────────────
+      # The .xcodeproj is generated from project.yml — never committed to git.
+      - name: Generate project
+        run: xcodegen generate
+
+      # ── 6. Archive (unsigned) ──────────────────────────────────────────────
       # Builds a Release archive without code signing.
       # AltStore re-signs with the reader's own Apple ID (development cert),
       # which automatically includes get-task-allow:true — required for LLDB.
@@ -69,7 +76,7 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             | xcpretty
 
-      # ── 5. Package IPA ─────────────────────────────────────────────────────
+      # ── 7. Package IPA ─────────────────────────────────────────────────────
       # Wraps the .app bundle in the standard IPA structure (Payload/App.app).
       # No signature — AltStore expects this format and handles signing itself.
       - name: Package IPA
@@ -85,7 +92,7 @@ jobs:
 
           echo "IPA size: $(du -sh "$RUNNER_TEMP/InstrumentationJourney.ipa" | cut -f1)"
 
-      # ── 6. GitHub Release ──────────────────────────────────────────────────
+      # ── 8. GitHub Release ──────────────────────────────────────────────────
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

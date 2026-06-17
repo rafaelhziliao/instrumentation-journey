@@ -26,6 +26,7 @@ struct Chapter01ChallengeView: View {
                 hintBlock
                     .padding(.top, 40)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
         }
