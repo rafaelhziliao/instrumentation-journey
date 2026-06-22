@@ -46,7 +46,10 @@ targets:
       configs:
         Debug:
           SWIFT_OPTIMIZATION_LEVEL: "-Onone"
-          DEBUG_INFORMATION_FORMAT: dwarf
+          # dwarf-with-dsym (not plain dwarf): plain dwarf leaves the rich DWARF
+          # in the .o files, so `image lookup -v` against a sideloaded IPA has no
+          # function ranges / line info. The dSYM bundles it for LLDB (by UUID).
+          DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
         Release:
           SWIFT_OPTIMIZATION_LEVEL: "-O"
           DEBUG_INFORMATION_FORMAT: dwarf-with-dsym

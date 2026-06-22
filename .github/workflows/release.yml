@@ -61,16 +61,21 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
-      # ── 5. Archive (unsigned) ──────────────────────────────────────────────
-      # Builds a Release archive without code signing.
-      # AltStore re-signs with the reader's own Apple ID (development cert),
-      # which automatically includes get-task-allow:true — required for LLDB.
+      # ── 5. Archive (unsigned, Debug) ───────────────────────────────────────
+      # Builds a Debug archive without code signing. Debug is intentional: this
+      # is a learning challenge, so the unoptimised (-Onone) build keeps the
+      # Messenger -> MessageRouter -> AchievementManager dispatch chain intact
+      # and symbols available for the LLDB investigation.
+      #
+      # The secret stays hidden regardless of config (the token lives in __bss),
+      # and get-task-allow (required for LLDB attach) comes from Sideloadly
+      # re-signing with the reader's development cert, not from the build config.
       - name: Archive
         run: |
           xcodebuild archive \
             -project InstrumentationJourney.xcodeproj \
             -scheme InstrumentationJourney \
-            -configuration Release \
+            -configuration Debug \
             -destination "generic/platform=iOS" \
             -archivePath "$RUNNER_TEMP/InstrumentationJourney.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
@@ -80,7 +85,7 @@ jobs:
 
       # ── 6. Package IPA ─────────────────────────────────────────────────────
       # Wraps the .app bundle in the standard IPA structure (Payload/App.app).
-      # No signature — AltStore expects this format and handles signing itself.
+      # No signature — Sideloadly expects this format and handles signing itself.
       - name: Package IPA
         run: |
           APP=$(find "$RUNNER_TEMP/InstrumentationJourney.xcarchive" \
@@ -94,7 +99,28 @@ jobs:
 
           echo "IPA size: $(du -sh "$RUNNER_TEMP/InstrumentationJourney.ipa" | cut -f1)"
 
-      # ── 7. Build release notes ─────────────────────────────────────────────
+      # ── 7. Package dSYM ────────────────────────────────────────────────────
+      # The Debug build uses dwarf-with-dsym, so the rich DWARF (function ranges,
+      # line info, types) lives in this dSYM rather than in the .o files. It ships
+      # as a separate asset so `image lookup -v` works against the sideloaded IPA.
+      # LLDB locates it automatically by UUID once it is on the reader's Mac.
+      - name: Package dSYM
+        run: |
+          DSYM=$(find "$RUNNER_TEMP/InstrumentationJourney.xcarchive/dSYMs" \
+            -name "*.dSYM" -maxdepth 1 | head -1)
+
+          if [ -z "$DSYM" ]; then
+            echo "::error::No dSYM found in the archive."
+            exit 1
+          fi
+
+          cd "$(dirname "$DSYM")"
+          zip -r "$RUNNER_TEMP/InstrumentationJourney.dSYM.zip" "$(basename "$DSYM")"
+
+          echo "dSYM: $DSYM"
+          echo "dSYM zip size: $(du -sh "$RUNNER_TEMP/InstrumentationJourney.dSYM.zip" | cut -f1)"
+
+      # ── 8. Build release notes ─────────────────────────────────────────────
       # Written to a file to avoid YAML/bash quoting issues with multiline text.
       - name: Build release notes
         run: |
@@ -128,9 +154,37 @@ jobs:
           ### Requirements
           - iOS 16+ device
           - Mac with Xcode installed (LLDB is bundled with Xcode)
+
+          ### Debug symbols (recommended)
+          Download `InstrumentationJourney.dSYM.zip` and unzip it. LLDB matches
+          the `.dSYM` to the process by UUID and auto-loads it, enabling rich
+          `image lookup -v` output (function ranges, source file and line).
+
+          Put the unzipped `.dSYM` in a folder that is NOT protected by macOS
+          privacy (TCC), e.g. `~/symbols`. Avoid Desktop, Documents and Downloads:
+          the command-line LLDB cannot read those without special permission and
+          will report `resolved path ''`.
+
+          ```bash
+          mkdir -p ~/symbols
+          unzip InstrumentationJourney.dSYM.zip -d ~/symbols
+          ```
+
+          Then just attach — the dSYM loads automatically:
+
+          ```bash
+          (lldb) device process attach -n InstrumentationJourney --waitfor
+          ```
+
+          If it does not auto-load, add it manually with an absolute path
+          (LLDB does not expand `~`):
+
+          ```bash
+          (lldb) add-dsym /Users/you/symbols/InstrumentationJourney.app.dSYM
+          ```
           EOF
 
-      # ── 8. GitHub Release ──────────────────────────────────────────────────
+      # ── 9. GitHub Release ──────────────────────────────────────────────────
       # Deletes any existing release and tag with the same version before
       # creating a fresh one. Safe to re-run for the same version.
       - name: Create GitHub Release
@@ -151,6 +205,7 @@ jobs:
 
           gh release create "$TAG" \
             "$RUNNER_TEMP/InstrumentationJourney.ipa" \
+            "$RUNNER_TEMP/InstrumentationJourney.dSYM.zip" \
             --title "$TAG: ${{ inputs.chapter }}" \
             --notes-file "$RUNNER_TEMP/notes.md" \
             --target "${{ github.sha }}" \
